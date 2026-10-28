@@ -1,0 +1,17 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+*.env
+# Prospect data contains business contact details; keep it local
+data/*.db
+data/interviews/
+data/daily_queue_*.csv
+
+# Public repo: anything with prospect-level names, emails or phones stays local
+data/
+outreach/OUTREACH_DRAFTS.md
+outreach/OUTREACH_QUEUE.csv
+research/FINAL_RECOMMENDATION.md
+research/BUYING_SIGNALS.md
+research/parts/signals_*.md
