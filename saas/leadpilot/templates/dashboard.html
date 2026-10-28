@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · LeadPilot{% endblock %}
+{% block content %}
+<h1>Last {{ m.days }} days</h1>
+<div class="kpis">
+  <div class="kpi"><div class="v">{{ m.new_leads }}</div><div class="l">Inquiries ({{ m.today }} in last 24h)</div></div>
+  <div class="kpi {{ 'bad' if m.untouched }}"><div class="v">{{ m.untouched }}</div><div class="l">Open leads never contacted</div></div>
+  <div class="kpi"><div class="v">{{ m.median_response_min if m.median_response_min is not none else '–' }}{% if m.median_response_min is not none %}<span class="small"> min</span>{% endif %}</div><div class="l">Median first response</div></div>
+  <div class="kpi"><div class="v">{{ m.within_15_min_pct if m.within_15_min_pct is not none else '–' }}{% if m.within_15_min_pct is not none %}<span class="small">%</span>{% endif %}</div><div class="l">Reached within 15 min</div></div>
+  <div class="kpi {{ 'bad' if m.overdue_tasks }}"><div class="v">{{ m.overdue_tasks }}</div><div class="l">Overdue follow-ups</div></div>
+  <div class="kpi {{ 'warn' if m.drafts_waiting }}"><div class="v">{{ m.drafts_waiting }}</div><div class="l"><a href="/outbox">Drafts awaiting review</a></div></div>
+</div>
+
+<div class="grid g2">
+  <div>
+    <div class="card">
+      <h2>My next tasks</h2>
+      {% if tasks %}
+      <table>
+        {% for t in tasks %}
+        <tr>
+          <td><a href="/leads/{{ t.lead_id }}">{{ t.lead_name or t.lead_phone }}</a><div class="small muted">{{ t.title }}</div></td>
+          <td>{% if t.due_at < now %}<span class="pill overdue">overdue {{ t.due_at|ago }}</span>{% else %}<span class="small muted">due {{ t.due_at|ago }}</span>{% endif %}</td>
+          <td><form class="inline" method="post" action="/tasks/{{ t.id }}/done"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="/dashboard"><button class="ghost sm">Done</button></form></td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="muted">No open tasks. New inquiries create one automatically.</p>{% endif %}
+    </div>
+    <div class="card">
+      <h2>By source</h2>
+      <table>
+        <tr><th>Source</th><th>Inquiries</th><th>Contacted</th><th>Enrolled</th></tr>
+        {% for s, v in m.by_source.items() %}
+        <tr><td>{{ s }}</td><td>{{ v.leads }}</td><td>{{ v.contacted }}</td><td>{{ v.enrolled }}</td></tr>
+        {% else %}<tr><td colspan="4" class="muted">No inquiries yet. Share your form link from Settings.</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <h2>Pipeline</h2>
+      <table>{% for s, n in m.stages.items() %}<tr><td><a href="/leads?stage={{ s }}">{{ s }}</a></td><td>{{ n }}</td></tr>{% endfor %}</table>
+    </div>
+    <div class="card">
+      <h2>Team</h2>
+      <table>
+        <tr><th>Counsellor</th><th>Open</th><th>Untouched</th><th>Overdue</th></tr>
+        {% for c in m.by_counsellor %}<tr><td>{{ c.name }}</td><td>{{ c.open_leads }}</td><td>{{ c.untouched or 0 }}</td><td>{{ c.overdue }}</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+<p class="small muted">Times shown in {{ org.timezone }}.</p>
+{% endblock %}

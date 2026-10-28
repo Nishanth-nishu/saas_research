@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Settings · LeadPilot{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<div class="grid g2">
+  <div>
+    <div class="card">
+      <h2>Capture inquiries</h2>
+      <p class="small">Hosted form (share the link, or put it in Instagram bio / Google Business profile):</p>
+      <pre>{{ base_url }}/f/{{ org.slug }}</pre>
+      <p class="small">Embed on your website:</p>
+      <pre>&lt;iframe src="{{ base_url }}/f/{{ org.slug }}?embed=1" style="width:100%;height:640px;border:0"&gt;&lt;/iframe&gt;</pre>
+      <p class="small">From your own form or ad tool (server-side), POST JSON to <code>{{ base_url }}/api/v1/leads</code> with header <code>X-API-Key</code>:</p>
+      <pre>{{ org.api_key }}</pre>
+      <form class="inline" method="post" action="/settings/rotate-key" onsubmit="return confirm('The old key stops working immediately.')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost sm">Generate new key</button></form>
+    </div>
+
+    <div class="card">
+      <h2>Follow-up rules</h2>
+      <p class="small muted">Delays count from the lead's creation (stage new) or the last real contact (other stages). Templates may use {first_name}, {org_name}, {topic}, {about}, {course}, {country}.</p>
+      {% for r in rules %}
+      <form method="post" action="/settings/rule" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="rule_id" value="{{ r.id }}">
+        <div class="row"><b>{{ r.name }}</b> <span class="pill {{ r.stage }}">{{ r.stage }}</span> <span class="small muted">{{ 'creates a task' if r.action == 'task' else 'drafts a message' }}</span></div>
+        <div class="row">
+          <div><label>Delay (minutes)</label><input type="number" name="delay_minutes" min="1" value="{{ r.delay_minutes }}" style="width:110px"></div>
+          <div><label><input type="checkbox" name="active" value="1" {{ 'checked' if r.active }}> Active</label></div>
+          <div><button class="ghost sm">Save</button></div>
+        </div>
+        {% if r.action == 'draft_message' %}<textarea name="template">{{ r.template }}</textarea>{% endif %}
+      </form>
+      {% endfor %}
+      <form method="post" action="/settings/run-engine" style="margin-top:12px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost sm">Run follow-up engine now</button></form>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Organisation</h2>
+      <form method="post" action="/settings/org">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Name</label><input name="name" value="{{ org.name }}">
+        <label>Timezone</label><input name="timezone" value="{{ org.timezone }}">
+        <label>WhatsApp phone number ID (from Meta)</label><input name="wa_phone_number_id" value="{{ org.wa_phone_number_id }}">
+        <p class="small muted">WhatsApp token on server: {{ 'set' if wa_token_set else 'NOT set (dry-run mode)' }} · AI drafting: {{ ai_model if ai_live else 'off (no ANTHROPIC_API_KEY)' }}</p>
+        <label><input type="checkbox" name="auto_send" value="1" {{ 'checked' if org.auto_send }}> Auto-send rule drafts without review (not recommended)</label>
+        <p><button>Save</button></p>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Team</h2>
+      <table class="small">
+        {% for u in users %}
+        <tr><td>{{ u.name }}<div class="muted">{{ u.email }}</div></td><td>{{ u.role }}</td>
+          <td>{% if u.id != user.id %}<form class="inline" method="post" action="/settings/toggle-user"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="ghost sm">{{ 'Deactivate' if u.active else 'Reactivate' }}</button></form>{% else %}<span class="muted">you</span>{% endif %}</td></tr>
+        {% endfor %}
+      </table>
+      <form method="post" action="/settings/users" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Name</label><input name="name" required>
+        <label>Email</label><input name="email" type="email" required>
+        <label>Temporary password (8+)</label><input name="password" type="password" minlength="8" required>
+        <label>Role</label><select name="role"><option value="counsellor">Counsellor</option><option value="admin">Admin</option></select>
+        <p><button class="sm">Add team member</button></p>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

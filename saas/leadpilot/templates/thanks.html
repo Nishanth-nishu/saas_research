@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Thank you · {{ org.name }}{% endblock %}
+{% block content %}
+<div class="public {{ '' if embed else 'card' }}">
+  <h1>Thank you!</h1>
+  <p>We've received your enquiry. A counsellor from {{ org.name }} will contact you soon.</p>
+</div>
+{% endblock %}

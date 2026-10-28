@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Sign up · LeadPilot{% endblock %}
+{% block content %}
+{% set f = form or {} %}
+<div class="auth card">
+  <h1>Set up your organisation</h1>
+  <p class="muted small">Every student inquiry, from forms and WhatsApp, gets an owner and a follow-up plan.</p>
+  <form method="post" action="/signup">
+    <label for="org_name">Consultancy / institute name</label><input id="org_name" name="org_name" value="{{ f.org_name or '' }}" required>
+    <label for="name">Your name</label><input id="name" name="name" value="{{ f.name or '' }}" required>
+    <label for="email">Work email</label><input id="email" name="email" type="email" value="{{ f.email or '' }}" required>
+    <label for="password">Password (8+ characters)</label><input id="password" name="password" type="password" minlength="8" required>
+    <p><button>Create account</button></p>
+  </form>
+  <p class="muted small">Already have an account? <a href="/login">Log in</a></p>
+</div>
+{% endblock %}

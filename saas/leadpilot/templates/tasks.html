@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Tasks · LeadPilot{% endblock %}
+{% block content %}
+<h1>{{ 'All open tasks' if everyone else 'My tasks' }}</h1>
+<p><a href="/tasks{{ '' if everyone else '?everyone=1' }}">{{ 'Show only mine' if everyone else 'Show everyone’s' }}</a></p>
+<div class="card">
+  <table>
+    <tr><th>Lead</th><th>Task</th><th>Due</th>{% if everyone %}<th>Owner</th>{% endif %}<th></th></tr>
+    {% for t in tasks %}
+    <tr>
+      <td><a href="/leads/{{ t.lead_id }}">{{ t.lead_name or t.lead_phone }}</a> <span class="pill {{ t.lead_stage }}">{{ t.lead_stage }}</span></td>
+      <td>{{ t.title }}</td>
+      <td>{% if t.due_at < now %}<span class="pill overdue">overdue {{ t.due_at|ago }}</span>{% else %}{{ t.due_at|local(org.timezone) }}{% endif %}</td>
+      {% if everyone %}<td class="small">{{ t.user_name or 'unassigned' }}</td>{% endif %}
+      <td><form class="inline" method="post" action="/tasks/{{ t.id }}/done"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost sm">Done</button></form></td>
+    </tr>
+    {% else %}<tr><td colspan="5" class="muted">Nothing due. 🎉</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}

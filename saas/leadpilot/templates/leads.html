@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Leads · LeadPilot{% endblock %}
+{% block content %}
+<h1>Leads</h1>
+<form class="card row" method="get" action="/leads">
+  <div><label>Stage</label><select name="stage">
+    <option value="open" {{ 'selected' if f.stage == 'open' }}>All open</option>
+    <option value="" {{ 'selected' if f.stage == '' }}>Everything</option>
+    {% for s in STAGES %}<option value="{{ s }}" {{ 'selected' if f.stage == s }}>{{ s }}</option>{% endfor %}
+  </select></div>
+  <div><label>Owner</label><select name="owner"><option value="">Anyone</option>
+    {% for u in users %}<option value="{{ u.id }}" {{ 'selected' if f.owner == u.id|string }}>{{ u.name }}</option>{% endfor %}
+  </select></div>
+  <div><label>Source</label><select name="source"><option value="">Any</option>
+    {% for s in SOURCES %}<option {{ 'selected' if f.source == s }}>{{ s }}</option>{% endfor %}
+  </select></div>
+  <div><label>Search</label><input name="q" value="{{ f.q }}" placeholder="name, phone, email, course"></div>
+  <div><button>Filter</button></div>
+</form>
+
+<div class="card">
+  <table>
+    <tr><th>Name</th><th>Interest</th><th>Stage</th><th>Owner</th><th>Source</th><th>Last contact</th><th>Created</th></tr>
+    {% for l in leads %}
+    <tr>
+      <td><a href="/leads/{{ l.id }}">{{ l.name or '(no name)' }}</a><div class="small muted">{{ l.phone or l.email }}{% if l.opted_out %} · do not contact{% endif %}</div></td>
+      <td class="small">{{ l.course_interest }}{% if l.country_interest %} · {{ l.country_interest }}{% endif %}</td>
+      <td><span class="pill {{ l.stage }}">{{ l.stage }}</span>{% if l.inquiry_count > 1 %} <span class="small muted">×{{ l.inquiry_count }}</span>{% endif %}</td>
+      <td class="small">{{ l.owner_name or '–' }}</td>
+      <td class="small">{{ l.source }}</td>
+      <td class="small">{{ (l.last_contacted_at|ago) or 'never' }}</td>
+      <td class="small">{{ l.created_at|local(org.timezone) }}</td>
+    </tr>
+    {% else %}<tr><td colspan="7" class="muted">No leads match.</td></tr>{% endfor %}
+  </table>
+</div>
+
+<div class="grid g2">
+  <form class="card" method="post" action="/leads">
+    <h2>Add a lead (walk-in or phone call)</h2>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="grid g3">
+      <div><label>Name</label><input name="name"></div>
+      <div><label>Phone</label><input name="phone" placeholder="98xxxxxxxx"></div>
+      <div><label>Email</label><input name="email" type="email"></div>
+      <div><label>Course / exam</label><input name="course_interest" placeholder="MS CS, IELTS…"></div>
+      <div><label>Country</label><input name="country_interest"></div>
+      <div><label>Intake</label><input name="intake" placeholder="Sep 2027"></div>
+    </div>
+    <label><input type="checkbox" name="consent" value="1"> Student agreed to be contacted on WhatsApp/email</label>
+    <p><button>Add lead</button></p>
+  </form>
+  <form class="card" method="post" action="/leads/import" enctype="multipart/form-data">
+    <h2>Import CSV</h2>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <p class="small muted">Columns recognised: name, phone/mobile, email, course, country, intake, notes, consent. Duplicates by phone or email are merged.</p>
+    <input type="file" name="file" accept=".csv,text/csv" required>
+    <p><button>Import</button></p>
+  </form>
+</div>
+{% endblock %}

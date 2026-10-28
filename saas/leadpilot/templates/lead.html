@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}{{ lead.name or 'Lead' }} · LeadPilot{% endblock %}
+{% block content %}
+<p class="small"><a href="/leads">← Leads</a></p>
+<h1>{{ lead.name or '(no name)' }} <span class="pill {{ lead.stage }}">{{ lead.stage }}</span></h1>
+{% if lead.opted_out %}<div class="alert warn">This student asked not to be contacted. Messages are blocked.</div>{% endif %}
+
+<div class="grid g2">
+  <div>
+    <div class="card">
+      <h2>Conversation</h2>
+      {% if not wa_live %}<div class="alert warn small">WhatsApp is not connected: sending records a dry run and nothing is delivered. Contact the student yourself and log it below.</div>
+      {% elif lead.phone and not in_window %}<div class="alert warn small">The student hasn't messaged in the last 24 hours, so WhatsApp only allows approved template messages (not supported yet). Call instead.</div>{% endif %}
+      {% for m in messages|reverse %}
+        {% if m.status == 'draft' %}
+        <form method="post" action="/messages/{{ m.id }}/send" class="bubble out">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="/leads/{{ lead.id }}">
+          <div class="small muted">Draft · {{ m.channel }} · {{ 'AI: ' ~ m.drafted_by if m.drafted_by not in ('human', 'template') else m.drafted_by }} — review before sending</div>
+          <textarea name="body">{{ m.body }}</textarea>
+          <div class="row"><button class="sm">Send</button>
+            <button class="ghost sm" formaction="/messages/{{ m.id }}/update">Save edit</button>
+            <button class="danger sm" formaction="/messages/{{ m.id }}/discard">Discard</button></div>
+        </form>
+        {% else %}
+        <div class="bubble {{ m.direction }}">{{ m.body }}<div class="small muted">{{ m.created_at|local(org.timezone) }} · <span class="pill {{ m.status }}">{{ 'dry run, not delivered' if m.status == 'simulated' else m.status }}</span>{% if m.error %} {{ m.error }}{% endif %}</div></div>
+        {% endif %}
+      {% else %}<p class="muted">No messages yet.</p>{% endfor %}
+      {% if not lead.opted_out %}
+      <form class="row" method="post" action="/leads/{{ lead.id }}/draft" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        {% set suggested = 'reply' if lead.last_inbound_at and lead.last_inbound_at > lead.last_contacted_at else ('first_reply' if lead.stage == 'new' else 'follow_up') %}
+        <select name="purpose">{% for v, label in [('first_reply', 'First reply'), ('follow_up', 'Follow-up'), ('reply', 'Reply to their message'), ('book_session', 'Invite to counselling')] %}<option value="{{ v }}" {{ 'selected' if v == suggested }}>{{ label }}</option>{% endfor %}</select>
+        <button class="ghost">{{ 'Draft with AI' if ai_live else 'Draft from template' }}</button>
+      </form>
+      <form method="post" action="/leads/{{ lead.id }}/message" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="channel" value="{{ 'whatsapp' if lead.phone else 'email' }}">
+        <textarea name="body" placeholder="Write your own message (saved as a draft first)"></textarea>
+        <button class="ghost sm">Save draft</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Log what happened</h2>
+      <form method="post" action="/leads/{{ lead.id }}/contact">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="row"><select name="kind"><option value="call">Call (reached)</option><option value="meeting">Meeting / visit</option><option value="whatsapp">WhatsApp sent from my phone</option><option value="email">Email sent</option><option value="note">Note only (no contact)</option></select></div>
+        <textarea name="body" placeholder="What was discussed? Next step?"></textarea>
+        <button>Log</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Timeline</h2>
+      <ul class="timeline">
+        {% for a in timeline %}<li><span class="small muted">{{ a.created_at|local(org.timezone) }} · {{ a.kind }}{% if a.user_name %} · {{ a.user_name }}{% endif %}</span><div>{{ a.body }}</div></li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Details</h2>
+      <table class="small">
+        <tr><td class="muted">Phone</td><td>{% if lead.phone %}<a href="tel:+{{ lead.phone }}">+{{ lead.phone }}</a> · <a href="https://wa.me/{{ lead.phone }}" target="_blank" rel="noopener">WhatsApp</a>{% else %}–{% endif %}</td></tr>
+        <tr><td class="muted">Email</td><td>{{ lead.email or '–' }}</td></tr>
+        <tr><td class="muted">Interest</td><td>{{ lead.course_interest or '–' }}{% if lead.country_interest %} · {{ lead.country_interest }}{% endif %}</td></tr>
+        <tr><td class="muted">Intake</td><td>{{ lead.intake or '–' }}</td></tr>
+        <tr><td class="muted">Source</td><td>{{ lead.source }}{% if lead.inquiry_count > 1 %} · asked {{ lead.inquiry_count }} times{% endif %}</td></tr>
+        <tr><td class="muted">Consent</td><td>{{ 'yes' if lead.consent else 'not recorded' }}</td></tr>
+        <tr><td class="muted">Created</td><td>{{ lead.created_at|local(org.timezone) }}</td></tr>
+        <tr><td class="muted">First contact</td><td>{{ lead.first_contacted_at|local(org.timezone) or 'never' }}</td></tr>
+        {% if lead.message %}<tr><td class="muted">Inquiry</td><td>{{ lead.message }}</td></tr>{% endif %}
+        {% if lead.lost_reason %}<tr><td class="muted">Lost because</td><td>{{ lead.lost_reason }}</td></tr>{% endif %}
+      </table>
+    </div>
+    <div class="card">
+      <h2>Stage</h2>
+      <form method="post" action="/leads/{{ lead.id }}/stage">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <select name="stage">{% for s in STAGES %}<option {{ 'selected' if s == lead.stage }}>{{ s }}</option>{% endfor %}</select>
+        <input name="lost_reason" placeholder="Reason (if lost)">
+        <button class="sm">Update</button>
+      </form>
+      <h2 style="margin-top:14px">Owner</h2>
+      <form method="post" action="/leads/{{ lead.id }}/assign">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <select name="owner_id">{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if u.id == lead.owner_id }}>{{ u.name }}</option>{% endfor %}</select>
+        <button class="sm">Reassign</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Open tasks</h2>
+      {% for t in tasks %}
+      <div class="row" style="justify-content:space-between"><div>{{ t.title }}<div class="small {{ 'muted' if t.due_at >= now }}">{% if t.due_at < now %}<span class="pill overdue">overdue</span>{% endif %} due {{ t.due_at|local(org.timezone) }}</div></div>
+        <form class="inline" method="post" action="/tasks/{{ t.id }}/done"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="/leads/{{ lead.id }}"><button class="ghost sm">Done</button></form></div>
+      {% else %}<p class="muted small">None.</p>{% endfor %}
+      <form method="post" action="/leads/{{ lead.id }}/task" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input name="title" placeholder="e.g. Send IELTS batch dates">
+        <div class="row"><select name="hours"><option value="1">in 1 hour</option><option value="4">in 4 hours</option><option value="24" selected>tomorrow</option><option value="72">in 3 days</option></select><button class="sm">Add task</button></div>
+      </form>
+    </div>
+    {% if not lead.opted_out %}
+    <form class="card" method="post" action="/leads/{{ lead.id }}/optout" onsubmit="return confirm('Mark as do-not-contact? Drafts will be discarded.')">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="danger sm">Student asked not to be contacted</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

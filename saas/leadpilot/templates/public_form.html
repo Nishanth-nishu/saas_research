@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Enquire · {{ org.name }}{% endblock %}
+{% block content %}
+{% set f = form or {} %}
+<div class="public {{ '' if embed else 'card' }}">
+  {% if not embed %}<h1>{{ org.name }}</h1><p class="muted">Tell us what you're planning and a counsellor will get in touch.</p>{% endif %}
+  <form method="post" action="/f/{{ org.slug }}">
+    <input type="hidden" name="embed" value="{{ embed }}">
+    <div class="hp" aria-hidden="true"><label>Website</label><input name="website" tabindex="-1" autocomplete="off"></div>
+    <label for="name">Your name</label><input id="name" name="name" value="{{ f.name or '' }}" required>
+    <label for="phone">Mobile / WhatsApp number</label><input id="phone" name="phone" type="tel" value="{{ f.phone or '' }}" placeholder="98xxxxxxxx">
+    <label for="email">Email</label><input id="email" name="email" type="email" value="{{ f.email or '' }}">
+    <label for="course">Course or exam you're interested in</label><input id="course" name="course_interest" value="{{ f.course_interest or '' }}" placeholder="MS in Computer Science, IELTS, GRE…">
+    <label for="country">Preferred country</label><input id="country" name="country_interest" value="{{ f.country_interest or '' }}">
+    <label for="intake">When do you want to start?</label><input id="intake" name="intake" value="{{ f.intake or '' }}" placeholder="Sep 2027">
+    <label for="message">Anything else?</label><textarea id="message" name="message">{{ f.message or '' }}</textarea>
+    <label><input type="checkbox" name="consent" value="1" {{ 'checked' if f.consent }}> I agree that {{ org.name }} may contact me by phone, WhatsApp or email about my enquiry.</label>
+    <p><button>Send enquiry</button></p>
+  </form>
+</div>
+{% endblock %}

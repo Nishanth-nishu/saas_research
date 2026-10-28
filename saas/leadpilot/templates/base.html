@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}LeadPilot{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if user %}
+<header class="top">
+  <a class="brand" href="/dashboard">LeadPilot</a>
+  <nav>
+    {% set p = request.url.path %}
+    <a href="/dashboard" class="{{ 'on' if p.startswith('/dashboard') }}">Dashboard</a>
+    <a href="/leads" class="{{ 'on' if p.startswith('/leads') }}">Leads</a>
+    <a href="/tasks" class="{{ 'on' if p.startswith('/tasks') }}">My tasks</a>
+    <a href="/outbox" class="{{ 'on' if p.startswith('/outbox') }}">Outbox</a>
+    {% if user.role == 'admin' %}<a href="/settings" class="{{ 'on' if p.startswith('/settings') }}">Settings</a>{% endif %}
+  </nav>
+  <div class="me"><span>{{ user.name }} · {{ org.name }}</span>
+    <form class="inline" method="post" action="/logout"><button class="ghost sm">Log out</button></form>
+  </div>
+</header>
+{% endif %}
+<main>
+  {% if flash %}<div class="alert ok">{{ flash }}</div>{% endif %}
+  {% if error %}<div class="alert err">{{ error }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

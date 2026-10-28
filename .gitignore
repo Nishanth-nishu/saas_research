@@ -15,3 +15,8 @@ outreach/OUTREACH_QUEUE.csv
 research/FINAL_RECOMMENDATION.md
 research/BUYING_SIGNALS.md
 research/parts/signals_*.md
+
+# LeadPilot local data and secrets
+saas/*.db
+saas/*.db-*
+saas/.secret_key

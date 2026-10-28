@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "leadpilot",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["saas/run.py"],
+      "env": { "LEADPILOT_TICK": "20", "LEADPILOT_DB": "saas/leadpilot_demo.db" },
+      "port": 8000
+    }
+  ]
+}

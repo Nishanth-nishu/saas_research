@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Outbox · LeadPilot{% endblock %}
+{% block content %}
+<h1>Outbox: drafts waiting for review</h1>
+<p class="muted">Follow-up rules draft these automatically. Nothing is sent until someone presses Send{% if org.auto_send %} (auto-send is ON for rule drafts){% endif %}.
+  <a href="/outbox{{ '' if mine else '?mine=1' }}">{{ 'Show all' if mine else 'Only my leads' }}</a></p>
+{% if not wa_live %}<div class="alert warn">WhatsApp is not connected. Sending will record a dry run only; nothing reaches the student.</div>{% endif %}
+{% for d in drafts %}
+<form class="card" method="post" action="/messages/{{ d.id }}/send">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="/outbox{{ '?mine=1' if mine }}">
+  <div class="row" style="justify-content:space-between">
+    <div><a href="/leads/{{ d.lead_id }}"><b>{{ d.lead_name or d.lead_phone }}</b></a> <span class="small muted">· {{ d.channel }} · owner {{ d.owner_name or '–' }} · {{ d.drafted_by }}{% if d.rule_key %} · rule {{ d.rule_key.split('@')[0] }}{% endif %}</span></div>
+    {% if d.channel == 'whatsapp' and wa_live and not window[d.id] %}<span class="pill overdue">outside 24h window: call instead</span>{% endif %}
+  </div>
+  <textarea name="body">{{ d.body }}</textarea>
+  <div class="row"><button class="sm">Send</button>
+    <button class="ghost sm" formaction="/messages/{{ d.id }}/update">Save edit</button>
+    <button class="danger sm" formaction="/messages/{{ d.id }}/discard">Discard</button></div>
+</form>
+{% else %}<div class="card muted">No drafts waiting.</div>{% endfor %}
+{% endblock %}
