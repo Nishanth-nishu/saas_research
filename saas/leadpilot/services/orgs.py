@@ -7,23 +7,32 @@ import sqlite3
 from ..db import STAGES, iso, utcnow
 from ..security import hash_password, new_api_key, verify_password
 
-# key, name, stage, delay (minutes), action, template
+# key, name, stage, delay (minutes; negative = before the demo for demo_booked), action, template
 DEFAULT_RULES = [
     ("first_response", "Call new inquiry within 15 minutes", "new", 15, "task", ""),
-    ("new_intro", "WhatsApp intro if still not reached after 1 hour", "new", 60, "draft_message",
-     "Hi {first_name}, thanks for your inquiry with {org_name}{about}. When is a good time for a "
-     "quick call with one of our counsellors?"),
-    ("contacted_d1", "Day-1 follow-up after last contact", "contacted", 1440, "draft_message",
-     "Hi {first_name}, following up from {org_name}. Did you get a chance to think about {topic}? "
-     "Happy to answer any questions."),
-    ("contacted_d3", "Day-3 follow-up after last contact", "contacted", 4320, "draft_message",
-     "Hi {first_name}, just checking in from {org_name}. Would you like to book a free counselling "
-     "session this week?"),
-    ("contacted_d7", "Day-7: call once more or mark lost", "contacted", 10080, "task", ""),
-    ("counselling_d2", "Nudge after 2 quiet days in counselling", "counselling", 2880, "draft_message",
-     "Hi {first_name}, hope the counselling session was useful. Is there anything else you need "
-     "from us to decide on {topic}?"),
-    ("application_d5", "Check application status after 5 quiet days", "application", 7200, "task", ""),
+    ("new_intro", "WhatsApp intro if not reached in 1 hour", "new", 60, "draft_message",
+     "Hi {first_name}, thanks for your enquiry about {exam} coaching at {org_name}. Would you like to attend "
+     "a free demo class? Tell us a time that suits you. {next_batch_line}"),
+    ("contacted_d1", "Day 1: invite to a free demo class", "contacted", 1440, "draft_message",
+     "Hi {first_name}, this is {org_name}. A free {exam} demo class is the easiest way to see if our coaching "
+     "suits you. Shall I book you a slot?"),
+    ("contacted_d3", "Day 3: share the next batch", "contacted", 4320, "draft_message",
+     "Hi {first_name}, just checking in from {org_name}. {next_batch_line} Would you like to try a free demo "
+     "class first?"),
+    ("contacted_d7", "Day 7: call once more or mark lost", "contacted", 10080, "task", ""),
+    ("demo_reminder_day", "Demo reminder the day before", "demo_booked", -1440, "draft_message",
+     "Hi {first_name}, a reminder of your free {exam} demo class at {org_name} on {demo_time}. Reply here if "
+     "you need to change the time."),
+    ("demo_reminder_2h", "Demo reminder 2 hours before", "demo_booked", -120, "draft_message",
+     "Hi {first_name}, see you at {demo_time} for your {exam} demo class at {org_name}."),
+    ("demo_mark", "Mark whether the student attended the demo", "demo_booked", 60, "task", ""),
+    ("attended_d1", "Day after demo: ask how it went", "demo_attended", 1440, "draft_message",
+     "Hi {first_name}, thanks for attending the {exam} demo class at {org_name}. How did you find it? "
+     "{next_batch_line}"),
+    ("attended_d3", "Day 3 after demo: call to close", "demo_attended", 4320, "task", ""),
+    ("attended_d7", "Day 7 after demo: last follow-up", "demo_attended", 10080, "draft_message",
+     "Hi {first_name}, {org_name} here. Are you still planning to prepare for {exam}? Happy to help you pick a "
+     "batch timing that works for you."),
 ]
 
 
@@ -140,7 +149,15 @@ def rules(conn: sqlite3.Connection, org_id: int) -> list[sqlite3.Row]:
 
 def update_rule(conn: sqlite3.Connection, org_id: int, rule_id: int, delay_minutes: int, active: bool,
                 template: str | None = None) -> None:
-    if delay_minutes < 1:
+    rule = conn.execute("SELECT * FROM followup_rules WHERE id = ? AND org_id = ?", (rule_id, org_id)).fetchone()
+    if rule is None:
+        raise LookupError("Rule not found")
+    if rule["stage"] != "demo_booked" and delay_minutes < 1:
         raise ValueError("Delay must be at least 1 minute")
+    if template:
+        from .templates import unknown_placeholders
+        bad = unknown_placeholders(template)
+        if bad:
+            raise ValueError(f"Unknown placeholder(s): {', '.join('{' + b + '}' for b in bad)}")
     conn.execute("UPDATE followup_rules SET delay_minutes = ?, active = ?, template = COALESCE(?, template) "
                  "WHERE id = ? AND org_id = ?", (delay_minutes, int(active), template, rule_id, org_id))

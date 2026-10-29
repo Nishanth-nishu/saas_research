@@ -11,8 +11,31 @@
   <div class="kpi {{ 'warn' if m.drafts_waiting }}"><div class="v">{{ m.drafts_waiting }}</div><div class="l"><a href="/outbox">Drafts awaiting review</a></div></div>
 </div>
 
+{% set f = m.funnel %}
+<div class="card">
+  <h2>Demo class funnel</h2>
+  <div class="kpis" style="margin:0">
+    <div class="kpi"><div class="v">{{ f.leads }}</div><div class="l">Enquiries</div></div>
+    <div class="kpi"><div class="v">{{ f.booked }}</div><div class="l">Booked a demo{% if f.leads %} ({{ (100 * f.booked / f.leads)|round|int }}%){% endif %}</div></div>
+    <div class="kpi {{ 'warn' if f.show_rate is not none and f.show_rate < 60 }}"><div class="v">{{ f.attended }}</div><div class="l">Attended{% if f.show_rate is not none %} ({{ f.show_rate }}% show-up){% endif %}</div></div>
+    <div class="kpi"><div class="v">{{ f.no_show }}</div><div class="l">No-shows</div></div>
+    <div class="kpi"><div class="v">{{ f.enrolled_after_demo }}</div><div class="l">Enrolled after demo{% if f.close_rate is not none %} ({{ f.close_rate }}%){% endif %}</div></div>
+  </div>
+</div>
+
 <div class="grid g2">
   <div>
+    <div class="card">
+      <h2>Demos in the next 48 hours</h2>
+      {% if m.upcoming_demos %}
+      <table>
+        {% for d in m.upcoming_demos %}
+        <tr><td><a href="/leads/{{ d.lead_id }}">{{ d.lead_name or d.lead_phone }}</a><div class="small muted">{{ d.exam or 'exam not set' }} · {{ d.mode }} · {{ d.owner_name or 'no owner' }}</div></td>
+          <td class="small">{{ d.scheduled_at|local(org.timezone, '%a %d %b, %I:%M %p') }}{% if d.scheduled_at < now %} <span class="pill overdue">mark attendance</span>{% endif %}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="muted">No demo classes booked. Book one from a lead's page.</p>{% endif %}
+    </div>
     <div class="card">
       <h2>My next tasks</h2>
       {% if tasks %}
@@ -28,6 +51,14 @@
       {% else %}<p class="muted">No open tasks. New inquiries create one automatically.</p>{% endif %}
     </div>
     <div class="card">
+      <h2>By exam</h2>
+      <table>
+        <tr><th>Exam</th><th>Enquiries</th><th>Demo booked</th><th>Attended</th><th>Enrolled</th></tr>
+        {% for e, v in f.by_exam.items() %}<tr><td>{{ e }}</td><td>{{ v.leads }}</td><td>{{ v.demos }}</td><td>{{ v.attended }}</td><td>{{ v.enrolled }}</td></tr>
+        {% else %}<tr><td colspan="5" class="muted">No enquiries yet.</td></tr>{% endfor %}
+      </table>
+    </div>
+    <div class="card">
       <h2>By source</h2>
       <table>
         <tr><th>Source</th><th>Inquiries</th><th>Contacted</th><th>Enrolled</th></tr>
@@ -40,7 +71,7 @@
   <div>
     <div class="card">
       <h2>Pipeline</h2>
-      <table>{% for s, n in m.stages.items() %}<tr><td><a href="/leads?stage={{ s }}">{{ s }}</a></td><td>{{ n }}</td></tr>{% endfor %}</table>
+      <table>{% for s, n in m.stages.items() %}<tr><td><a href="/leads?stage={{ s }}">{{ s|stage_label }}</a></td><td>{{ n }}</td></tr>{% endfor %}</table>
     </div>
     <div class="card">
       <h2>Team</h2>

@@ -3,12 +3,13 @@ from datetime import timedelta
 from conftest import T0
 
 from leadpilot.config import load_settings
-from leadpilot.services import followups, leads, messaging
+from leadpilot.services import followups, leads, messaging, orgs
+from leadpilot.services.templates import context
 
 
 def _new_lead(conn, org, consent=True, **extra):
-    data = {"phone": "9876543210", "name": "priya sharma", "course_interest": "MS CS", "country_interest": "Germany",
-            "consent": consent, **extra}
+    data = {"phone": "9876543210", "name": "priya sharma", "exam": "IELTS", "target_score": "7.5",
+            "preferred_slot": "evening", "mode": "offline", "consent": consent, **extra}
     return leads.capture(conn, org["id"], data, "web_form", T0)[0]
 
 
@@ -33,7 +34,8 @@ def test_draft_uses_lead_fields(conn, org):
     lead_id = _new_lead(conn, org)
     followups.run(conn, T0 + timedelta(hours=2))
     body = conn.execute("SELECT body FROM messages WHERE lead_id = ? AND status = 'draft'", (lead_id,)).fetchone()[0]
-    assert body.startswith("Hi Priya,") and "MS CS in Germany" in body and "Sky Overseas" in body
+    assert body.startswith("Hi Priya,") and "IELTS coaching" in body and "Sky Overseas" in body
+    assert "batch" not in body  # no batches set up, so none is mentioned
 
 
 def test_no_consent_no_draft_but_task(conn, org):
@@ -123,7 +125,9 @@ def test_parse_whatsapp_webhook():
 def test_ai_falls_back_to_template_without_key(conn, org, settings):
     from leadpilot.services import ai
     lead_id = _new_lead(conn, org)
-    text, by = ai.draft(settings, leads.get(conn, org["id"], lead_id), "Sky Overseas", [], "first_reply")
+    lead = leads.get(conn, org["id"], lead_id)
+    ctx = context(conn, lead, orgs.get_org(conn, org["id"]), T0)
+    text, by = ai.draft(settings, lead, ctx, [], "first_reply")
     assert by == "template" and text.startswith("Hi Priya")
 
 
@@ -142,7 +146,9 @@ def test_ai_uses_client_and_handles_refusal(conn, org, settings):
             return SimpleNamespace(stop_reason=self.stop, content=[SimpleNamespace(type="text", text="Hi Priya, AI here.")])
 
     lead = leads.get(conn, org["id"], _new_lead(conn, org))
+    ctx = context(conn, lead, orgs.get_org(conn, org["id"]), T0)
     ok = Fake("end_turn")
-    assert ai.draft(settings, lead, "Sky", [], client=ok) == ("Hi Priya, AI here.", settings.ai_model)
+    assert ai.draft(settings, lead, ctx, [], client=ok) == ("Hi Priya, AI here.", settings.ai_model)
     assert ok.kwargs["model"] == "claude-opus-5-5" and ok.kwargs["fallbacks"] == "default"
-    assert ai.draft(settings, lead, "Sky", [], client=Fake("refusal"))[1] == "template"
+    assert "Target score: 7.5" in ok.kwargs["messages"][0]["content"]
+    assert ai.draft(settings, lead, ctx, [], client=Fake("refusal"))[1] == "template"

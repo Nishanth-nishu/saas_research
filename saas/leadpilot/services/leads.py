@@ -7,10 +7,11 @@ import re
 import sqlite3
 from datetime import datetime
 
-from ..db import OPEN_STAGES, SOURCES, STAGES, iso
+from ..db import EXAMS, MODES, OPEN_STAGES, SLOTS, SOURCES, STAGES, iso
 
 CONTACT_KINDS = {"call", "whatsapp", "email", "meeting"}  # kinds that count as real contact
-LEAD_FIELDS = ["name", "phone", "email", "course_interest", "country_interest", "intake", "message"]
+LEAD_FIELDS = ["name", "phone", "email", "exam", "target_score", "exam_date", "preferred_slot", "mode",
+               "country_interest", "message"]
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 
 
@@ -24,6 +25,31 @@ def normalize_phone(raw: str, default_cc: str = "91") -> str:
     if len(digits) == 10:
         digits = default_cc + digits
     return digits if 8 <= len(digits) <= 15 else ""
+
+
+def normalize_exam(raw: str) -> str:
+    """Map free text ('ielts general', 'pte-a') to an exam on the list; keep unknown text as typed."""
+    text = (raw or "").strip()
+    low = text.lower()
+    for exam in EXAMS:
+        if exam.lower().split()[0] in low:
+            return exam
+    return text[:60]
+
+
+def normalize_month(raw: str) -> str:
+    """'2027-03' from a month picker; anything else is dropped rather than guessed."""
+    m = re.match(r"^(20\d\d)-(0[1-9]|1[0-2])", (raw or "").strip())
+    return f"{m.group(1)}-{m.group(2)}" if m else ""
+
+
+def exam_soon(lead, now: datetime, days: int = 60) -> bool:
+    """True when the student's planned exam month starts within `days` (urgency for follow-up)."""
+    if not lead["exam_date"]:
+        return False
+    y, mth = map(int, lead["exam_date"].split("-"))
+    start = datetime(y, mth, 1, tzinfo=now.tzinfo)
+    return (start - now).days <= days
 
 
 def normalize_email(raw: str) -> str:
@@ -72,7 +98,10 @@ def capture(conn: sqlite3.Connection, org_id: int, data: dict, source: str, now:
     if not phone and not email:
         raise ValueError("A valid phone number or email is required")
     clean = {f: str(data.get(f, "") or "").strip()[:2000] for f in LEAD_FIELDS}
-    clean.update(phone=phone, email=email)
+    clean.update(phone=phone, email=email, exam=normalize_exam(clean["exam"]),
+                 exam_date=normalize_month(clean["exam_date"]),
+                 preferred_slot=clean["preferred_slot"].lower() if clean["preferred_slot"].lower() in SLOTS else "",
+                 mode=clean["mode"].lower() if clean["mode"].lower() in MODES else "")
     consent = 1 if data.get("consent") in (True, 1, "1", "on", "yes", "true") else 0
 
     existing = find_duplicate(conn, org_id, phone, email)
@@ -94,10 +123,9 @@ def capture(conn: sqlite3.Connection, org_id: int, data: dict, source: str, now:
 
     owner = next_assignee(conn, org_id, now)
     cur = conn.execute(
-        "INSERT INTO leads (org_id, name, phone, email, source, course_interest, country_interest, intake, "
-        "message, owner_id, consent, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (org_id, clean["name"], phone, email, source, clean["course_interest"], clean["country_interest"],
-         clean["intake"], clean["message"], owner, consent, iso(now), iso(now)))
+        f"INSERT INTO leads (org_id, source, owner_id, consent, created_at, updated_at, {', '.join(LEAD_FIELDS)}) "
+        f"VALUES (?, ?, ?, ?, ?, ?, {', '.join('?' * len(LEAD_FIELDS))})",
+        (org_id, source, owner, consent, iso(now), iso(now), *(clean[f] for f in LEAD_FIELDS)))
     lead_id = cur.lastrowid
     log(conn, org_id, lead_id, "created", f"New inquiry via {source}", now, user_id)
     if owner:
@@ -129,7 +157,7 @@ def search(conn: sqlite3.Connection, org_id: int, stage: str = "", owner_id: str
         sql += " AND l.source = ?"
         args.append(source)
     if q:
-        sql += " AND (l.name LIKE ? OR l.phone LIKE ? OR l.email LIKE ? OR l.course_interest LIKE ?)"
+        sql += " AND (l.name LIKE ? OR l.phone LIKE ? OR l.email LIKE ? OR l.exam LIKE ?)"
         args += [f"%{q}%"] * 4
     sql += " ORDER BY l.updated_at DESC LIMIT ?"
     args.append(limit)
@@ -158,6 +186,8 @@ def set_stage(conn: sqlite3.Connection, org_id: int, lead_id: int, stage: str, n
 def _close_open_work(conn: sqlite3.Connection, lead_id: int, now: datetime) -> None:
     conn.execute("UPDATE tasks SET done_at = ? WHERE lead_id = ? AND done_at = ''", (iso(now), lead_id))
     conn.execute("UPDATE messages SET status = 'discarded' WHERE lead_id = ? AND status = 'draft'", (lead_id,))
+    conn.execute("UPDATE demos SET status = 'cancelled', updated_at = ? WHERE lead_id = ? AND status = 'booked'",
+                 (iso(now), lead_id))
 
 
 def record_contact(conn: sqlite3.Connection, org_id: int, lead_id: int, kind: str, body: str, now: datetime,
@@ -181,6 +211,22 @@ def record_contact(conn: sqlite3.Connection, org_id: int, lead_id: int, kind: st
     # Contact satisfies any open follow-up task for this lead that is already due
     conn.execute("UPDATE tasks SET done_at = ? WHERE lead_id = ? AND done_at = '' AND due_at <= ?",
                  (iso(now), lead_id, iso(now)))
+
+
+def update_details(conn: sqlite3.Connection, org_id: int, lead_id: int, data: dict, now: datetime,
+                   user_id: int | None = None) -> None:
+    """Edit the student's exam details after a call. Contact fields are not editable here."""
+    if get(conn, org_id, lead_id) is None:
+        raise LookupError("Lead not found")
+    fields = {"name": str(data.get("name", "")).strip()[:120], "exam": normalize_exam(data.get("exam", "")),
+              "target_score": str(data.get("target_score", "")).strip()[:20],
+              "exam_date": normalize_month(data.get("exam_date", "")),
+              "preferred_slot": data.get("preferred_slot", "") if data.get("preferred_slot", "") in SLOTS else "",
+              "mode": data.get("mode", "") if data.get("mode", "") in MODES else "",
+              "country_interest": str(data.get("country_interest", "")).strip()[:60]}
+    conn.execute(f"UPDATE leads SET {', '.join(f'{k} = ?' for k in fields)}, updated_at = ? WHERE id = ?",
+                 (*fields.values(), iso(now), lead_id))
+    log(conn, org_id, lead_id, "edit", "Details updated", now, user_id)
 
 
 def reassign(conn: sqlite3.Connection, org_id: int, lead_id: int, owner_id: int, now: datetime,
@@ -212,9 +258,12 @@ CSV_ALIASES = {
     "name": ["name", "full name", "student name", "lead name"],
     "phone": ["phone", "mobile", "phone number", "whatsapp", "contact"],
     "email": ["email", "email address", "e-mail"],
-    "course_interest": ["course", "course interest", "program", "programme", "exam"],
+    "exam": ["exam", "course", "test", "program", "programme"],
+    "target_score": ["target", "target score", "target band", "band"],
+    "exam_date": ["exam date", "exam month", "test date"],
+    "preferred_slot": ["slot", "timing", "batch timing", "preferred slot"],
+    "mode": ["mode", "online/offline"],
     "country_interest": ["country", "destination", "country interest"],
-    "intake": ["intake", "session", "batch"],
     "message": ["message", "notes", "remarks", "query"],
     "consent": ["consent", "opt in", "opt-in"],
 }

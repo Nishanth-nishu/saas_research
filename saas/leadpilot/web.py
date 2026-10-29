@@ -5,7 +5,7 @@ import asyncio
 import contextlib
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -17,8 +17,8 @@ from fastapi.templating import Jinja2Templates
 
 from . import security
 from .config import Settings, load_settings
-from .db import SOURCES, STAGES, connect, init_db, iso, parse, utcnow
-from .services import ai, followups, leads, messaging, metrics, orgs
+from .db import EXAMS, MODES, SLOTS, SOURCES, STAGES, connect, init_db, iso, parse, utcnow
+from .services import ai, demos, followups, leads, messaging, metrics, orgs, templates as tpl
 
 log = logging.getLogger("leadpilot")
 HERE = Path(__file__).resolve().parent
@@ -44,7 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
-    templates.env.globals.update(STAGES=STAGES, SOURCES=SOURCES)
+    templates.env.globals.update(STAGES=STAGES, SOURCES=SOURCES, EXAMS=EXAMS, SLOTS=SLOTS, MODES=MODES)
 
     def db():
         return connect(settings.db_path)
@@ -65,7 +65,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                else f"{int(secs // 86400)}d")
         return f"in {txt}" if future else f"{txt} ago"
 
-    templates.env.filters.update(local=local, ago=ago)
+    templates.env.filters.update(local=local, ago=ago, batch_text=tpl.batch_text,
+                                 stage_label=lambda s: s.replace('_', ' '))
 
     def current(request: Request):
         token = request.cookies.get(COOKIE, "")
@@ -213,7 +214,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Lead not found")
         owner = conn.execute("SELECT name FROM users WHERE id = ?", (lead["owner_id"],)).fetchone() if lead["owner_id"] else None
         tasks = conn.execute("SELECT * FROM tasks WHERE lead_id = ? AND done_at = '' ORDER BY due_at", (lead_id,)).fetchall()
+        now = utcnow()
+        today = now.astimezone(ZoneInfo(org["timezone"])).date().isoformat()
         return render(request, "lead.html", {
+            "demos": demos.for_lead(conn, lead_id), "demo": demos.current_demo(conn, lead_id),
+            "next_batch": demos.next_batch(conn, lead, today), "exam_soon": leads.exam_soon(lead, now),
+            "demo_default": (now + timedelta(days=1)).astimezone(ZoneInfo(org["timezone"])).strftime("%Y-%m-%dT18:00"),
             "user": user, "org": org, "token": token, "lead": lead, "owner": owner,
             "users": [u for u in orgs.users(conn, org["id"]) if u["active"]],
             "timeline": leads.timeline(conn, lead_id), "messages": messaging.for_lead(conn, lead_id),
@@ -270,10 +276,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lead = leads.get(conn, org["id"], lead_id)
         if lead is None:
             raise LookupError("Lead not found")
-        text, by = ai.draft(settings, lead, org["name"], messaging.for_lead(conn, lead_id), f.get("purpose", "follow_up"))
+        ctx = tpl.context(conn, lead, org, utcnow())
+        text, by = ai.draft(settings, lead, ctx, messaging.for_lead(conn, lead_id), f.get("purpose", "follow_up"))
         channel = "whatsapp" if lead["phone"] else "email"
         messaging.create_draft(conn, org["id"], lead_id, channel, text, utcnow(), user["id"], drafted_by=by)
         return "Draft ready for review" + (" (template: AI not configured)" if by == "template" else "")
+
+    @_lead_action("details")
+    def _details(conn, user, org, lead_id, f):
+        leads.update_details(conn, org["id"], lead_id, f, utcnow(), user["id"])
+        return "Details saved"
+
+    @_lead_action("demo")
+    def _demo(conn, user, org, lead_id, f):
+        try:
+            when = datetime.fromisoformat(f.get("scheduled_at", "")).replace(tzinfo=ZoneInfo(org["timezone"]))
+        except ValueError:
+            raise ValueError("Pick a date and time for the demo") from None
+        demos.book(conn, org["id"], lead_id, when, f.get("mode", "offline"), utcnow(), user["id"])
+        return "Demo booked: reminders will be drafted before the class"
+
+    @_lead_action("demo-mark")
+    def _demo_mark(conn, user, org, lead_id, f):
+        status = f.get("status", "")
+        demos.mark(conn, org["id"], int(f.get("demo_id") or 0), status, utcnow(), user["id"])
+        return {"attended": "Marked attended", "no_show": "Marked no-show: reschedule task created",
+                "cancelled": "Demo cancelled"}.get(status, "Saved")
 
     @_lead_action("message")
     def _message(conn, user, org, lead_id, f):
@@ -342,7 +370,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         require_admin(user)
         return render(request, "settings.html", {
             "user": user, "org": org, "token": token, "users": orgs.users(conn, org["id"]),
-            "rules": orgs.rules(conn, org["id"]), "base_url": settings.base_url or str(request.base_url).rstrip("/"),
+            "rules": orgs.rules(conn, org["id"]), "batches": demos.batches(conn, org["id"]), "base_url": settings.base_url or str(request.base_url).rstrip("/"),
             "wa_token_set": bool(settings.wa_access_token), "ai_live": bool(settings.anthropic_key),
             "ai_model": settings.ai_model})
 
@@ -376,6 +404,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 orgs.update_rule(conn, org["id"], int(f.get("rule_id") or 0), int(f.get("delay_minutes") or 0),
                                  bool(f.get("active")), f.get("template"))
                 msg = "Rule saved"
+            elif section == "batch":
+                demos.add_batch(conn, org["id"], f.get("exam", ""), f.get("starts_on", ""), f.get("slot", ""),
+                                f.get("mode", ""), f.get("timing", ""), int(f.get("seats") or 0), utcnow())
+                msg = "Batch added: follow-ups will mention it to matching students"
+            elif section == "toggle-batch":
+                b = conn.execute("SELECT active FROM batches WHERE id = ? AND org_id = ?",
+                                 (int(f.get("batch_id") or 0), org["id"])).fetchone()
+                if b is None:
+                    raise LookupError("Batch not found")
+                demos.set_batch_active(conn, org["id"], int(f["batch_id"]), not b["active"])
+                msg = "Batch updated"
             elif section == "rotate-key":
                 orgs.rotate_api_key(conn, org["id"])
                 msg = "New API key generated; update any website integration that used the old one"

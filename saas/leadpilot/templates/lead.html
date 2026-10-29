@@ -2,11 +2,37 @@
 {% block title %}{{ lead.name or 'Lead' }} · LeadPilot{% endblock %}
 {% block content %}
 <p class="small"><a href="/leads">← Leads</a></p>
-<h1>{{ lead.name or '(no name)' }} <span class="pill {{ lead.stage }}">{{ lead.stage }}</span></h1>
+<h1>{{ lead.name or '(no name)' }} <span class="pill {{ lead.stage }}">{{ lead.stage|stage_label }}</span>
+  {% if exam_soon %}<span class="pill overdue" title="Planned exam month is within 60 days">exam soon</span>{% endif %}</h1>
 {% if lead.opted_out %}<div class="alert warn">This student asked not to be contacted. Messages are blocked.</div>{% endif %}
 
 <div class="grid g2">
   <div>
+    <div class="card">
+      <h2>Free demo class</h2>
+      {% if demo %}
+        <p><b>Booked:</b> {{ demo.scheduled_at|local(org.timezone, '%a %d %b, %I:%M %p') }} · {{ demo.mode }}
+          <span class="small muted">· reminders are drafted the day before and 2 hours before</span></p>
+        <form class="row" method="post" action="/leads/{{ lead.id }}/demo-mark">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="demo_id" value="{{ demo.id }}">
+          <button class="sm" name="status" value="attended">Attended</button>
+          <button class="ghost sm" name="status" value="no_show">Didn't come</button>
+          <button class="danger sm" name="status" value="cancelled">Cancel booking</button>
+        </form>
+      {% elif lead.stage not in ('enrolled', 'lost') %}
+        <form class="row" method="post" action="/leads/{{ lead.id }}/demo">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <div><label>Date and time ({{ org.timezone }})</label><input type="datetime-local" name="scheduled_at" value="{{ demo_default }}" required></div>
+          <div><label>Mode</label><select name="mode">{% for m in MODES %}<option {{ 'selected' if m == (lead.mode or 'offline') }}>{{ m }}</option>{% endfor %}</select></div>
+          <div><button>Book demo</button></div>
+        </form>
+      {% endif %}
+      {% set past = demos|rejectattr('status', 'equalto', 'booked')|list %}
+      {% if past %}<p class="small muted" style="margin-top:10px">History: {% for d in past %}{{ d.scheduled_at|local(org.timezone, '%d %b') }} {{ d.status|stage_label }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      <p class="small" style="margin-top:10px"><b>Next matching batch:</b>
+        {% if next_batch %}{{ next_batch.exam }}, starts {{ next_batch|batch_text }}{% else %}<span class="muted">none set up for {{ lead.exam or 'this exam' }}. {% if user.role == 'admin' %}<a href="/settings#batches">Add batches</a> so follow-ups can mention them.{% endif %}</span>{% endif %}</p>
+    </div>
+
     <div class="card">
       <h2>Conversation</h2>
       {% if not wa_live %}<div class="alert warn small">WhatsApp is not connected: sending records a dry run and nothing is delivered. Contact the student yourself and log it below.</div>
@@ -15,7 +41,7 @@
         {% if m.status == 'draft' %}
         <form method="post" action="/messages/{{ m.id }}/send" class="bubble out">
           <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="/leads/{{ lead.id }}">
-          <div class="small muted">Draft · {{ m.channel }} · {{ 'AI: ' ~ m.drafted_by if m.drafted_by not in ('human', 'template') else m.drafted_by }} — review before sending</div>
+          <div class="small muted">Draft · {{ m.channel }} · {{ 'AI: ' ~ m.drafted_by if m.drafted_by not in ('human', 'template') else m.drafted_by }}{% if m.rule_key %} · {{ m.rule_key.split('@')[0]|stage_label }}{% endif %}. Review before sending</div>
           <textarea name="body">{{ m.body }}</textarea>
           <div class="row"><button class="sm">Send</button>
             <button class="ghost sm" formaction="/messages/{{ m.id }}/update">Save edit</button>
@@ -26,10 +52,10 @@
         {% endif %}
       {% else %}<p class="muted">No messages yet.</p>{% endfor %}
       {% if not lead.opted_out %}
+      {% set suggested = 'reply' if lead.last_inbound_at and lead.last_inbound_at > lead.last_contacted_at else ('first_reply' if lead.stage == 'new' else ('after_demo' if lead.stage == 'demo_attended' else ('book_demo' if lead.stage == 'contacted' else 'follow_up'))) %}
       <form class="row" method="post" action="/leads/{{ lead.id }}/draft" style="margin-top:10px">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        {% set suggested = 'reply' if lead.last_inbound_at and lead.last_inbound_at > lead.last_contacted_at else ('first_reply' if lead.stage == 'new' else 'follow_up') %}
-        <select name="purpose">{% for v, label in [('first_reply', 'First reply'), ('follow_up', 'Follow-up'), ('reply', 'Reply to their message'), ('book_session', 'Invite to counselling')] %}<option value="{{ v }}" {{ 'selected' if v == suggested }}>{{ label }}</option>{% endfor %}</select>
+        <select name="purpose">{% for v, label in [('first_reply', 'First reply'), ('book_demo', 'Invite to free demo'), ('after_demo', 'After the demo'), ('follow_up', 'General follow-up'), ('reply', 'Reply to their message')] %}<option value="{{ v }}" {{ 'selected' if v == suggested }}>{{ label }}</option>{% endfor %}</select>
         <button class="ghost">{{ 'Draft with AI' if ai_live else 'Draft from template' }}</button>
       </form>
       <form method="post" action="/leads/{{ lead.id }}/message" style="margin-top:10px">
@@ -44,8 +70,8 @@
       <h2>Log what happened</h2>
       <form method="post" action="/leads/{{ lead.id }}/contact">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <div class="row"><select name="kind"><option value="call">Call (reached)</option><option value="meeting">Meeting / visit</option><option value="whatsapp">WhatsApp sent from my phone</option><option value="email">Email sent</option><option value="note">Note only (no contact)</option></select></div>
-        <textarea name="body" placeholder="What was discussed? Next step?"></textarea>
+        <div class="row"><select name="kind"><option value="call">Call (reached)</option><option value="meeting">Walk-in / visit</option><option value="whatsapp">WhatsApp sent from my phone</option><option value="email">Email sent</option><option value="note">Note only (no contact)</option></select></div>
+        <textarea name="body" placeholder="What was discussed? Current level, target score, fee questions, next step?"></textarea>
         <button>Log</button>
       </form>
     </div>
@@ -53,33 +79,45 @@
     <div class="card">
       <h2>Timeline</h2>
       <ul class="timeline">
-        {% for a in timeline %}<li><span class="small muted">{{ a.created_at|local(org.timezone) }} · {{ a.kind }}{% if a.user_name %} · {{ a.user_name }}{% endif %}</span><div>{{ a.body }}</div></li>{% endfor %}
+        {% for a in timeline %}<li><span class="small muted">{{ a.created_at|local(org.timezone) }} · {{ a.kind|stage_label }}{% if a.user_name %} · {{ a.user_name }}{% endif %}</span><div>{{ a.body }}</div></li>{% endfor %}
       </ul>
     </div>
   </div>
 
   <div>
     <div class="card">
-      <h2>Details</h2>
+      <h2>Student</h2>
       <table class="small">
         <tr><td class="muted">Phone</td><td>{% if lead.phone %}<a href="tel:+{{ lead.phone }}">+{{ lead.phone }}</a> · <a href="https://wa.me/{{ lead.phone }}" target="_blank" rel="noopener">WhatsApp</a>{% else %}–{% endif %}</td></tr>
         <tr><td class="muted">Email</td><td>{{ lead.email or '–' }}</td></tr>
-        <tr><td class="muted">Interest</td><td>{{ lead.course_interest or '–' }}{% if lead.country_interest %} · {{ lead.country_interest }}{% endif %}</td></tr>
-        <tr><td class="muted">Intake</td><td>{{ lead.intake or '–' }}</td></tr>
         <tr><td class="muted">Source</td><td>{{ lead.source }}{% if lead.inquiry_count > 1 %} · asked {{ lead.inquiry_count }} times{% endif %}</td></tr>
         <tr><td class="muted">Consent</td><td>{{ 'yes' if lead.consent else 'not recorded' }}</td></tr>
-        <tr><td class="muted">Created</td><td>{{ lead.created_at|local(org.timezone) }}</td></tr>
+        <tr><td class="muted">Owner</td><td>{{ owner.name if owner else '–' }}</td></tr>
+        <tr><td class="muted">Enquired</td><td>{{ lead.created_at|local(org.timezone) }}</td></tr>
         <tr><td class="muted">First contact</td><td>{{ lead.first_contacted_at|local(org.timezone) or 'never' }}</td></tr>
-        {% if lead.message %}<tr><td class="muted">Inquiry</td><td>{{ lead.message }}</td></tr>{% endif %}
+        {% if lead.message %}<tr><td class="muted">Enquiry</td><td>{{ lead.message }}</td></tr>{% endif %}
         {% if lead.lost_reason %}<tr><td class="muted">Lost because</td><td>{{ lead.lost_reason }}</td></tr>{% endif %}
       </table>
+      <form method="post" action="/leads/{{ lead.id }}/details" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Name</label><input name="name" value="{{ lead.name }}">
+        <div class="grid g2" style="gap:8px">
+          <div><label>Exam</label><select name="exam"><option value="">–</option>{% for e in EXAMS %}<option {{ 'selected' if e == lead.exam }}>{{ e }}</option>{% endfor %}</select></div>
+          <div><label>Target score</label><input name="target_score" value="{{ lead.target_score }}" placeholder="7.0 / 65"></div>
+          <div><label>Exam month</label><input type="month" name="exam_date" value="{{ lead.exam_date }}"></div>
+          <div><label>Country</label><input name="country_interest" value="{{ lead.country_interest }}"></div>
+          <div><label>Timing</label><select name="preferred_slot"><option value="">–</option>{% for s in SLOTS %}<option {{ 'selected' if s == lead.preferred_slot }}>{{ s }}</option>{% endfor %}</select></div>
+          <div><label>Mode</label><select name="mode"><option value="">–</option>{% for m in MODES %}<option {{ 'selected' if m == lead.mode }}>{{ m }}</option>{% endfor %}</select></div>
+        </div>
+        <p><button class="ghost sm">Save details</button></p>
+      </form>
     </div>
     <div class="card">
       <h2>Stage</h2>
       <form method="post" action="/leads/{{ lead.id }}/stage">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <select name="stage">{% for s in STAGES %}<option {{ 'selected' if s == lead.stage }}>{{ s }}</option>{% endfor %}</select>
-        <input name="lost_reason" placeholder="Reason (if lost)">
+        <select name="stage">{% for s in STAGES %}<option value="{{ s }}" {{ 'selected' if s == lead.stage }}>{{ s|stage_label }}</option>{% endfor %}</select>
+        <input name="lost_reason" placeholder="Reason (if lost): fees, joined elsewhere…">
         <button class="sm">Update</button>
       </form>
       <h2 style="margin-top:14px">Owner</h2>
@@ -97,7 +135,7 @@
       {% else %}<p class="muted small">None.</p>{% endfor %}
       <form method="post" action="/leads/{{ lead.id }}/task" style="margin-top:10px">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input name="title" placeholder="e.g. Send IELTS batch dates">
+        <input name="title" placeholder="e.g. Send batch timings and fees">
         <div class="row"><select name="hours"><option value="1">in 1 hour</option><option value="4">in 4 hours</option><option value="24" selected>tomorrow</option><option value="72">in 3 days</option></select><button class="sm">Add task</button></div>
       </form>
     </div>

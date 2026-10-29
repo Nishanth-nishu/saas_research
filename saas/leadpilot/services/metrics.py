@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from statistics import median
 
 from ..db import OPEN_STAGES, STAGES, iso, parse
+from . import demos
 
 
 def dashboard(conn: sqlite3.Connection, org_id: int, now: datetime, days: int = 30) -> dict:
@@ -48,4 +49,6 @@ def dashboard(conn: sqlite3.Connection, org_id: int, now: datetime, days: int = 
         "stages": {s: sum(1 for l in leads if l["stage"] == s) for s in STAGES},
         "by_source": by_source,
         "by_counsellor": by_counsellor,
+        "funnel": demos.funnel(conn, org_id, since),
+        "upcoming_demos": demos.upcoming(conn, org_id, now, hours=48),
     }

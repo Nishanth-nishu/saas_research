@@ -4,9 +4,14 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-STAGES = ["new", "contacted", "counselling", "application", "enrolled", "lost"]
-OPEN_STAGES = ["new", "contacted", "counselling", "application"]
+STAGES = ["new", "contacted", "demo_booked", "demo_attended", "enrolled", "lost"]
+OPEN_STAGES = ["new", "contacted", "demo_booked", "demo_attended"]
 SOURCES = ["web_form", "whatsapp", "api", "csv", "manual"]
+EXAMS = ["IELTS", "PTE", "TOEFL", "Duolingo", "Spoken English", "Not sure"]
+SLOTS = ["morning", "afternoon", "evening", "weekend"]
+MODES = ["offline", "online"]
+DEMO_STATUSES = ["booked", "attended", "no_show", "cancelled"]
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orgs (
@@ -37,9 +42,12 @@ CREATE TABLE IF NOT EXISTS leads (
     phone TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL DEFAULT '',
     source TEXT NOT NULL,
-    course_interest TEXT NOT NULL DEFAULT '',
+    exam TEXT NOT NULL DEFAULT '',
+    target_score TEXT NOT NULL DEFAULT '',
+    exam_date TEXT NOT NULL DEFAULT '',  -- YYYY-MM (month the student plans to sit the exam)
+    preferred_slot TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT '',
     country_interest TEXT NOT NULL DEFAULT '',
-    intake TEXT NOT NULL DEFAULT '',
     message TEXT NOT NULL DEFAULT '',
     stage TEXT NOT NULL DEFAULT 'new',
     owner_id INTEGER REFERENCES users(id),
@@ -107,6 +115,29 @@ CREATE TABLE IF NOT EXISTS followup_rules (
     active INTEGER NOT NULL DEFAULT 1,
     UNIQUE (org_id, key)
 );
+CREATE TABLE IF NOT EXISTS batches (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL REFERENCES orgs(id),
+    exam TEXT NOT NULL,
+    starts_on TEXT NOT NULL,             -- YYYY-MM-DD
+    slot TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    timing TEXT NOT NULL DEFAULT '',     -- free text shown to students, e.g. "7-9 AM, Mon-Fri"
+    seats INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS demos (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL,
+    lead_id INTEGER NOT NULL REFERENCES leads(id),
+    scheduled_at TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('booked', 'attended', 'no_show', 'cancelled')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_demos_lead ON demos(lead_id);
 """
 
 
@@ -131,4 +162,10 @@ def connect(path: str) -> sqlite3.Connection:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    has_tables = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'orgs'").fetchone()
+    if has_tables and version != SCHEMA_VERSION:
+        raise RuntimeError(f"Database schema v{version} is older than v{SCHEMA_VERSION} and there are no migrations "
+                           "yet. For a dev database, delete the file and restart.")
     conn.executescript(SCHEMA)
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

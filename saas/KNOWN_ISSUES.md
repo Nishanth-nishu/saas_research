@@ -1,8 +1,9 @@
 # LeadPilot — where it goes wrong (fix list)
 
-Status on 2026-10-28: v0.1 built from scratch in one session. 38 automated tests pass, and the main
-flow was clicked through in a browser (sign up → public form inquiry → lead → draft → send (dry run)
-→ settings). **No real customer has used it, and no real WhatsApp message or Claude API call has been made.**
+Status on 2026-10-29: v0.2, narrowed to **IELTS/PTE coaching centres** (exams, demo classes, batches, demo
+funnel). 57 automated tests pass, and the flow was clicked through in a browser (sign up → add batch → public
+form enquiry → book demo → draft → dashboard). **No real customer has used it, and no real WhatsApp message
+or Claude API call has been made.**
 
 Work through this list top to bottom; each item says why it matters.
 
@@ -13,12 +14,16 @@ Work through this list top to bottom; each item says why it matters.
 | Refreshing the "Thank you" page re-submitted the inquiry (inflating `inquiry_count`) | Redirect after POST to `/f/<slug>/thanks` |
 | Follow-up rules listed alphabetically (application before new) | Sorted by pipeline stage |
 | Blank gap at the top of draft bubbles | CSS whitespace fix |
-| "Draft" defaulted to *Follow-up* even for brand-new leads | Defaults to first reply / reply / follow-up by lead state |
+| "Draft" defaulted to *Follow-up* even for brand-new leads | Defaults to first reply / demo invite / after-demo / reply by lead state |
+| v0.2: show-up rate read 0% while the only demo was still in the future | Show-up rate counts only demos already marked attended or no-show |
+| v0.2: batch table repeated the timing in two columns | Start column shows date, slot and mode only |
 
 ## P0 — blocks a paying pilot
 1. **WhatsApp templates are not supported.** Meta only allows free-text messages within 24 h of the
    student's last message. Day-1/3/7 follow-ups are almost always outside that window, so today they can
-   only be sent by a counsellor from their own phone (then logged). Needs: template creation/approval
+   only be sent by a counsellor from their own phone (then logged). **This now hits demo reminders too**: a
+   reminder the day before is usually outside the window unless the student messaged when booking. Encourage
+   students to message the centre's WhatsApp when they book (that opens the window), and build templates. Needs: template creation/approval
    flow, template sending, and a WhatsApp Business Platform account (Meta business verification + per-message
    charges, or a BSP like Interakt/Wati/Gupshup — decide which; that is a cost decision for you).
 2. **Not deployed.** Runs on a laptop. The webhook and public form need a public HTTPS URL
@@ -27,6 +32,9 @@ Work through this list top to bottom; each item says why it matters.
    forms, JustDial, Shiksha/Leverage-style portals and Instagram DMs. Only the hosted form, CSV import,
    JSON API and WhatsApp inbound exist. Meta Lead Ads webhook is the first connector to build.
 4. **No email/SMS provider.** Email "sends" are simulated. Add SMTP or a transactional provider.
+
+5a. **Unvalidated niche details.** Exam list, slot names, default delays (15 min, 1 h, day 1/3/7, reminders 24 h and
+   2 h before) are guesses from desk research. Check them in the first interviews with Ameerpet centres.
 
 ## P1 — will bite in the first weeks of use
 5. **No password reset, no email verification, open sign-up.** Anyone can create an org.
@@ -41,6 +49,11 @@ Work through this list top to bottom; each item says why it matters.
     numbers becomes two leads. Add a "merge leads" action.
 11. **10-digit numbers are assumed Indian** (+91). Wrong for UAE/UK branches; make the default country per org.
 
+11a. **Students can't pick a demo slot themselves.** The form asks for timing; a counsellor calls to fix the
+    demo. A self-booking page with the centre's demo slots is the obvious next feature.
+11b. **No fees or payments.** Fee questions are the most common objection; the app deliberately stores no fee data
+    (so messages can't state wrong fees). Decide whether to add a per-batch fee field the counsellor maintains.
+
 ## P2 — quality and compliance
 12. **DPDP Act:** no per-student data export/delete, no retention period, consent text isn't versioned or stored
     with the lead. Needed before handling real student data at scale (core obligations from ~May 2027).
@@ -53,8 +66,11 @@ Work through this list top to bottom; each item says why it matters.
 17. **Dry-run mode shows low "contacted" numbers** by design (simulated sends are not contact). Counsellors must
     log calls; onboarding should say so.
 18. Logout has no CSRF token (low risk: cookies are SameSite=Lax).
+19. **Accessibility:** several inputs in Settings and the lead page have visual labels that aren't linked to the
+    field (screen readers announce them unnamed); consent checkboxes are announced as "1".
 
 ## Product risk (bigger than any bug)
-The research recommended **interviews before building**. This build skips that, so the biggest open question
+The research recommended **interviews before building**. The narrowing to IELTS/PTE centres makes the pitch
+sharper ("more of your enquiries turn up for the demo and join a batch"), but it is still unvalidated. This build skips that, so the biggest open question
 isn't technical: will 2–3 study-abroad/test-prep owners pay ₹25–50k for this, and is follow-up really their
 pain? Show this build in those interviews and let their answers re-order this list.

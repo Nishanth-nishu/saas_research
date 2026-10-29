@@ -6,7 +6,7 @@
   <div><label>Stage</label><select name="stage">
     <option value="open" {{ 'selected' if f.stage == 'open' }}>All open</option>
     <option value="" {{ 'selected' if f.stage == '' }}>Everything</option>
-    {% for s in STAGES %}<option value="{{ s }}" {{ 'selected' if f.stage == s }}>{{ s }}</option>{% endfor %}
+    {% for s in STAGES %}<option value="{{ s }}" {{ 'selected' if f.stage == s }}>{{ s|stage_label }}</option>{% endfor %}
   </select></div>
   <div><label>Owner</label><select name="owner"><option value="">Anyone</option>
     {% for u in users %}<option value="{{ u.id }}" {{ 'selected' if f.owner == u.id|string }}>{{ u.name }}</option>{% endfor %}
@@ -20,12 +20,12 @@
 
 <div class="card">
   <table>
-    <tr><th>Name</th><th>Interest</th><th>Stage</th><th>Owner</th><th>Source</th><th>Last contact</th><th>Created</th></tr>
+    <tr><th>Name</th><th>Exam</th><th>Stage</th><th>Owner</th><th>Source</th><th>Last contact</th><th>Created</th></tr>
     {% for l in leads %}
     <tr>
       <td><a href="/leads/{{ l.id }}">{{ l.name or '(no name)' }}</a><div class="small muted">{{ l.phone or l.email }}{% if l.opted_out %} · do not contact{% endif %}</div></td>
-      <td class="small">{{ l.course_interest }}{% if l.country_interest %} · {{ l.country_interest }}{% endif %}</td>
-      <td><span class="pill {{ l.stage }}">{{ l.stage }}</span>{% if l.inquiry_count > 1 %} <span class="small muted">×{{ l.inquiry_count }}</span>{% endif %}</td>
+      <td class="small">{{ l.exam or '–' }}{% if l.target_score %} · target {{ l.target_score }}{% endif %}{% if l.exam_date %}<div class="muted">exam {{ l.exam_date }}{% if l.preferred_slot %} · {{ l.preferred_slot }}{% endif %}</div>{% endif %}</td>
+      <td><span class="pill {{ l.stage }}">{{ l.stage|stage_label }}</span>{% if l.inquiry_count > 1 %} <span class="small muted">×{{ l.inquiry_count }}</span>{% endif %}</td>
       <td class="small">{{ l.owner_name or '–' }}</td>
       <td class="small">{{ l.source }}</td>
       <td class="small">{{ (l.last_contacted_at|ago) or 'never' }}</td>
@@ -37,15 +37,18 @@
 
 <div class="grid g2">
   <form class="card" method="post" action="/leads">
-    <h2>Add a lead (walk-in or phone call)</h2>
+    <h2>Add a walk-in or phone enquiry</h2>
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div class="grid g3">
       <div><label>Name</label><input name="name"></div>
       <div><label>Phone</label><input name="phone" placeholder="98xxxxxxxx"></div>
       <div><label>Email</label><input name="email" type="email"></div>
-      <div><label>Course / exam</label><input name="course_interest" placeholder="MS CS, IELTS…"></div>
-      <div><label>Country</label><input name="country_interest"></div>
-      <div><label>Intake</label><input name="intake" placeholder="Sep 2027"></div>
+      <div><label>Exam</label><select name="exam"><option value="">–</option>{% for e in EXAMS %}<option>{{ e }}</option>{% endfor %}</select></div>
+      <div><label>Target score</label><input name="target_score" placeholder="7.0 / 65"></div>
+      <div><label>Exam month</label><input type="month" name="exam_date"></div>
+      <div><label>Timing</label><select name="preferred_slot"><option value="">–</option>{% for s in SLOTS %}<option>{{ s }}</option>{% endfor %}</select></div>
+      <div><label>Mode</label><select name="mode"><option value="">–</option>{% for m in MODES %}<option>{{ m }}</option>{% endfor %}</select></div>
+      <div><label>Country (if studying/migrating)</label><input name="country_interest"></div>
     </div>
     <label><input type="checkbox" name="consent" value="1"> Student agreed to be contacted on WhatsApp/email</label>
     <p><button>Add lead</button></p>
@@ -53,7 +56,7 @@
   <form class="card" method="post" action="/leads/import" enctype="multipart/form-data">
     <h2>Import CSV</h2>
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <p class="small muted">Columns recognised: name, phone/mobile, email, course, country, intake, notes, consent. Duplicates by phone or email are merged.</p>
+    <p class="small muted">Columns recognised: name, phone/mobile, email, exam, target score, exam month (YYYY-MM), timing, mode, country, notes, consent. Duplicates by phone or email are merged.</p>
     <input type="file" name="file" accept=".csv,text/csv" required>
     <p><button>Import</button></p>
   </form>

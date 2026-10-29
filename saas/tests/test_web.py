@@ -114,3 +114,21 @@ def test_counsellor_cannot_open_settings(client):
     client.post("/logout")
     client.post("/login", data={"email": "ravi@sky.test", "password": "password123"})
     assert client.get("/settings").status_code == 403
+
+
+def test_demo_batch_and_details_flow(client):
+    signup(client)
+    token = csrf_of(client.get("/settings").text)
+    r = client.post("/settings/batch", data={"csrf": token, "exam": "IELTS", "starts_on": "2099-01-05", "slot": "evening",
+                                            "mode": "offline", "timing": "6-8 PM", "seats": "20"})
+    assert "Batch added" in r.text and "6-8 PM" in r.text
+    lead_url = str(client.post("/leads", data={"csrf": token, "name": "Ravi", "phone": "9876543210", "exam": "IELTS",
+                                               "preferred_slot": "evening", "consent": "1"}).url).split("?")[0]
+    page = client.get(lead_url).text
+    assert "Next matching batch" in page and "6-8 PM" in page
+    assert "Demo booked" in client.post(lead_url + "/demo", data={"csrf": token, "scheduled_at": "2099-01-02T18:00",
+                                                                   "mode": "offline"}).text
+    assert "Pick a date" in client.post(lead_url + "/demo", data={"csrf": token, "scheduled_at": "", "mode": "offline"}).text
+    assert "Details saved" in client.post(lead_url + "/details", data={"csrf": token, "name": "Ravi K", "exam": "PTE",
+                                                                       "target_score": "65", "exam_date": "2099-02"}).text
+    assert "Demo class funnel" in client.get("/dashboard").text

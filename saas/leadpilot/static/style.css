@@ -66,3 +66,5 @@ form.bubble { white-space: normal; }
 code, pre { background: #f0f2f5; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
 pre { padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
 @media (max-width: 860px) { .g2, .g3 { grid-template-columns: 1fr; } header.top .me span { display: none; } }
+.pill.demo_booked { background: #e0f2fe; color: #0369a1; }
+.pill.demo_attended { background: #f3e8ff; color: #7e22ce; }

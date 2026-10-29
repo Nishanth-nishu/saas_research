@@ -15,15 +15,37 @@
       <form class="inline" method="post" action="/settings/rotate-key" onsubmit="return confirm('The old key stops working immediately.')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost sm">Generate new key</button></form>
     </div>
 
+    <div class="card" id="batches">
+      <h2>Upcoming batches</h2>
+      <p class="small muted">Follow-up messages mention the next batch that matches the student's exam, timing and mode. Only real batches: nothing is invented.</p>
+      <table class="small">
+        <tr><th>Exam</th><th>Starts</th><th>Timing</th><th>Seats</th><th></th></tr>
+        {% for b in batches %}
+        <tr class="{{ '' if b.active else 'muted' }}"><td>{{ b.exam }}</td><td>{{ b.starts_on }} · {{ b.slot }} {{ b.mode }}</td><td>{{ b.timing or '–' }}</td><td>{{ b.seats or '–' }}</td>
+          <td><form class="inline" method="post" action="/settings/toggle-batch"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="batch_id" value="{{ b.id }}"><button class="ghost sm">{{ 'Hide' if b.active else 'Show' }}</button></form></td></tr>
+        {% else %}<tr><td colspan="5" class="muted">No batches yet.</td></tr>{% endfor %}
+      </table>
+      <form method="post" action="/settings/batch" class="row" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div><label>Exam</label><select name="exam">{% for e in EXAMS if e != 'Not sure' %}<option>{{ e }}</option>{% endfor %}</select></div>
+        <div><label>Start date</label><input type="date" name="starts_on" required></div>
+        <div><label>Slot</label><select name="slot">{% for s in SLOTS %}<option>{{ s }}</option>{% endfor %}</select></div>
+        <div><label>Mode</label><select name="mode">{% for m in MODES %}<option>{{ m }}</option>{% endfor %}</select></div>
+        <div><label>Timing shown to students</label><input name="timing" placeholder="7-9 AM, Mon-Fri"></div>
+        <div><label>Seats</label><input type="number" name="seats" min="0" style="width:80px"></div>
+        <div><button class="sm">Add batch</button></div>
+      </form>
+    </div>
+
     <div class="card">
       <h2>Follow-up rules</h2>
-      <p class="small muted">Delays count from the lead's creation (stage new) or the last real contact (other stages). Templates may use {first_name}, {org_name}, {topic}, {about}, {course}, {country}.</p>
+      <p class="small muted">Delays count from the enquiry (stage new), the demo start time (demo booked: negative = before the class), or the last real contact (other stages). Templates may use {first_name}, {org_name}, {exam}, {target_score}, {demo_time}, {next_batch}, {next_batch_line}; empty values are left out, never guessed.</p>
       {% for r in rules %}
       <form method="post" action="/settings/rule" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
         <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="rule_id" value="{{ r.id }}">
-        <div class="row"><b>{{ r.name }}</b> <span class="pill {{ r.stage }}">{{ r.stage }}</span> <span class="small muted">{{ 'creates a task' if r.action == 'task' else 'drafts a message' }}</span></div>
+        <div class="row"><b>{{ r.name }}</b> <span class="pill {{ r.stage }}">{{ r.stage|stage_label }}</span> <span class="small muted">{{ 'creates a task' if r.action == 'task' else 'drafts a message' }}</span></div>
         <div class="row">
-          <div><label>Delay (minutes)</label><input type="number" name="delay_minutes" min="1" value="{{ r.delay_minutes }}" style="width:110px"></div>
+          <div><label>Delay (minutes)</label><input type="number" name="delay_minutes" {{ '' if r.stage == 'demo_booked' else 'min=1' }} value="{{ r.delay_minutes }}" style="width:110px"></div>
           <div><label><input type="checkbox" name="active" value="1" {{ 'checked' if r.active }}> Active</label></div>
           <div><button class="ghost sm">Save</button></div>
         </div>
