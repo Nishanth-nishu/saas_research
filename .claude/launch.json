@@ -7,6 +7,12 @@
       "runtimeArgs": ["saas/run.py"],
       "env": { "LEADPILOT_TICK": "20", "LEADPILOT_DB": "saas/leadpilot_demo.db" },
       "port": 8000
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8090", "--directory", "site"],
+      "port": 8090
     }
   ]
 }

@@ -8,7 +8,9 @@ and by hand; **nothing is sent automatically**.
 2. You read the evidence URL, edit the draft, and change `approval_status` to `approved`.
 3. You choose the channel and send it yourself (or explicitly approve one specific send per message).
 4. Only after a message is actually sent is `outreach_status` in `data/prospects.csv` changed to `contacted`, with the date in `next_action`.
-5. No subagent, script or scheduled task may send email, LinkedIn messages, WhatsApp messages or contact-form submissions.
+5. No subagent or scheduled task may send anything. The one exception is `src/outreach_bot.py send --send`, run by you:
+   it emails only rows you approved, at most 20 a day (hard cap 30), 2–4 minutes apart, never to opted-out
+   addresses. LinkedIn, WhatsApp and contact forms stay manual.
 
 ## 2. What messages must never claim
 - That you used their product, spoke to their customers, or know their internal workflow.
